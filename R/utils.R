@@ -1,10 +1,13 @@
 
-#' groupMeans
-#' compute the average vector, splitting a matrix for each level of a grouping variable
+#' group_means
+#' 
+#' Given a matrix, compute the average vector for each level of a grouping variable.
+#' 
 #' @param X the matrix
 #' @param margin the margin to average over (1 for rows, 2 for columns)
+#' @param group the grouping variable, a \code{factor} or \code{integer} vector
 #' @export
-groupMeans <- function(X, margin, group) {
+group_means <- function(X, margin, group) {
   if (margin == 1) {
     xsum <- rowsum(X, group)
     sweep(xsum, 1, table(group), "/") 
@@ -16,3 +19,36 @@ groupMeans <- function(X, margin, group) {
   }
 }
 
+spearman_cor <- function(x, y=NULL, use="everything") {
+  cor(x,y,use, method="spearman")
+}
+
+kendall_cor <- function(x, y=NULL, use="everything") {
+  cor(x,y,use, method="kendall")
+}
+
+zeroVarianceColumns <- function(M) {
+  which(apply(M, 2, sd, na.rm=TRUE) == 0)
+}
+
+
+zeroVarianceColumns2 <- function(M) {
+  apply(M, 2, sd, na.rm=TRUE) == 0
+}
+
+nonzeroVarianceColumns <- function(M) {
+  which(apply(M, 2, sd, na.rm=TRUE) > 0)
+}
+
+nonzeroVarianceColumns2 <- function(M) {
+  apply(M, 2, sd, na.rm=TRUE) > 0
+}
+
+removeZeroVarianceColumns <- function(M) {
+  noVariance <- which(apply(M, 2, sd, na.rm=TRUE) == 0)
+  if (length(noVariance) > 0) {
+    M[, hasVariance, drop=FALSE]
+  } else {
+    M
+  }
+}

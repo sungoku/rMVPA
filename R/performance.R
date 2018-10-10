@@ -1,57 +1,46 @@
 
+
+
 #' predicted_class
 #' @param prob a matrix of predicted probabilities with column names indicating the classes
 predicted_class <- function(prob) {
-  maxid <- apply(prob, 1, which.max)
+  maxid <- max.col(prob, ties.method="random")
   pclass <- colnames(prob)[maxid]
 }
 
 
+#' @param x the result object
+#' @param split_list split results by indexed sub-groups
 #' @export
-#' @param x
-#' @param splitList
-#' @param classMetrics
-performance.SimilarityResult <- function(x, splitList=NULL, classMetrics=FALSE) {  
-  #simAll <- x$simWithinTable$sim
-  #names(simAll) <- paste0("sim_", x$simWithinTable$label)
-  #c(simWithin=x$sWithin, simDiff=x$sWithin - x$sBetween, simAll)
-}
-
-.twowayPerf <- function(observed, predicted, probs) {
-  ncorrect <- sum(observed == predicted)
-  ntotal <- length(observed)
-  maxClass <- max(table(observed))
-  
-  out <- binom.test(ncorrect,
-                    ntotal,
-                    p = maxClass/ntotal,
-                    alternative = "greater")
-  
-  c(ZAccuracy=-qnorm(out$p.value), Accuracy=ncorrect/ntotal, AUC=Metrics::auc(observed == levels(observed)[2], probs[,2])-.5)
-  
-}
-
-#' @export
-#' @param x
-#' @param splitList
-#' @param classMetrics
-performance.RegressionResult <- function(x, splitList, classMetrics=FALSE) {
+#' @rdname performance-methods
+performance.regression_result <- function(x, split_list) {
+  if (!is.null(split_list)) {
+    ## TODO: add support
+    stop("split_by not supported for regression analyses yet.")
+  }
   R2 <- 1 - sum((x$observed - x$predicted)^2)/sum((x$observed-mean(x$observed))^2)
   rmse <- sqrt(mean((x$observed-x$predicted)^2))
   rcor <- cor(x$observed, x$predicted, method="spearman")
   c(R2=R2, RMSE=rmse, spearcor=rcor)
 }
 
-#' @export
+
+#' custom_performance
 #' 
-customPerformance <- function(x, customFun, splitList=NULL) {
-  if (is.null(splitList)) {
-    customFun(x)
+#' applies a user-supplied performance metric to a prediction result
+#' 
+#' @param x the result object
+#' @param custom_fun the function used to compute performance metrics, i.e. \code{custom_fun(x)}
+#' @param split_list the splitting groups
+#' @export
+custom_performance <- function(x, custom_fun, split_list=NULL) {
+  if (is.null(split_list)) {
+    custom_fun(x)
   } else {
-    total <- customFun(x)
-    subtots <- unlist(lapply(names(splitList), function(tag) {
-      ind <- splitList[[tag]]
-      ret <- customFun(subResult(x, ind))
+    total <- custom_fun(x)
+    subtots <- unlist(lapply(names(split_list), function(tag) {
+      ind <- split_list[[tag]]
+      ret <- custom_fun(subResult(x, ind))
       names(ret) <- paste0(names(ret), "_", tag)
       ret
     }))
@@ -62,47 +51,69 @@ customPerformance <- function(x, customFun, splitList=NULL) {
 }
 
 #' @export
-merge_results.TwoWayClassificationResult <- function(x,y) {
-  probs <- (x$probs + y$probs)/2
-  TwoWayClassificationResult(observed=x$observed, predicted=NULL, probs=probs, testDesign=x$testDesign, predictor=x$predictor)
+merge_results.binary_classification_result <- function(x,...) {
+  rlist <- list(x,...)
+  probs <- Reduce("+", lapply(rlist, function(x) x$probs))/length(rlist)
+  
+  mc <- max.col(probs)
+  predicted <- levels(x$observed)[mc]
+  binary_classification_result(observed=x$observed, predicted=predicted, probs=probs, testind=x$testind, 
+                               test_design=x$test_design, predictor=x$predictor)
 }
 
 #' @export
-merge_results.MultiWayClassificationResult <- function(x,y) {
-  probs <- (x$probs + y$probs)/2
-  MultiWayClassificationResult(observed=x$observed, predicted=NULL, probs=probs, testDesign=x$testDesign, predictor=x$predictor)
+merge_results.multiway_classification_result <- function(x,...) {
+  
+  rlist <- list(x,...)
+  probs <- Reduce("+", lapply(rlist, function(x) x$probs))/length(rlist)
+  mc <- max.col(probs)
+  predicted <- levels(x$observed)[mc]
+  
+  multiway_classification_result(observed=x$observed, predicted=predicted, probs=probs, 
+                                 testind=x$testind,  test_design=x$test_design, predictor=x$predictor)
 }
 
 #' @export
-performance.TwoWayClassificationResult <- function(x, splitList=NULL, classMetrics=FALSE, customFun=NULL) {
-  if (is.null(splitList)) {
-    ret <- .twowayPerf(x$observed, x$predicted, x$probs)
+performance.binary_classification_result <- function(x, split_list=NULL,...) {
+  stopifnot(length(x$observed) == length(x$predicted))
+  
+  if (is.null(split_list)) {
+    ret <- binary_perf(x$observed, x$predicted, x$probs)
   } else {
-    total <- .twowayPerf(x$observed, x$predicted, x$probs)
+    total <- binary_perf(x$observed, x$predicted, x$probs)
     
-    subtots <- unlist(lapply(names(splitList), function(tag) {
-      ind <- splitList[[tag]]
-      ret <- .twowayPerf(x$observed[ind], x$predicted[ind], x$probs[ind,])
+    subtots <- unlist(lapply(names(split_list), function(tag) {
+      ind <- split_list[[tag]]
+      if (!is.null(x$testind)) {
+        ind <- which(x$testind %in% ind)
+      }
+      ret <- binary_perf(x$observed[ind], x$predicted[ind], x$probs[ind,])
       names(ret) <- paste0(names(ret), "_", tag)
       ret
     }))
     
     ret <- c(total, subtots)
   }
- 
 }
 
+
+
 #' @export
-performance.MultiWayClassificationResult <- function(x, splitList=NULL, classMetrics=FALSE) {
+performance.multiway_classification_result <- function(x, split_list=NULL, class_metrics=FALSE,...) {
   stopifnot(length(x$observed) == length(x$predicted))
-  
-  if (is.null(splitList)) {
-    .multiwayPerf(x$observed, x$predicted, x$probs, classMetrics)
+
+  if (is.null(split_list)) {
+    multiclass_perf(x$observed, x$predicted, x$probs, class_metrics)
   } else {
-    total <- .multiwayPerf(x$observed, x$predicted, x$probs, classMetrics)
-    subtots <- unlist(lapply(names(splitList), function(tag) {
-      ind <- splitList[[tag]]
-      ret <- .multiwayPerf(x$observed[ind], x$predicted[ind], x$probs[ind,], classMetrics)
+    total <- multiclass_perf(x$observed, x$predicted, x$probs, class_metrics)
+    subtots <- unlist(lapply(names(split_list), function(tag) {
+      ind <- split_list[[tag]]
+      
+      if (!is.null(x$testind)) {
+        ind <- which(x$testind %in% ind)
+      }
+      
+      ret <- multiclass_perf(x$observed[ind], x$predicted[ind], x$probs[ind,], class_metrics)
       names(ret) <- paste0(names(ret), "_", tag)
       ret
     }))
@@ -113,6 +124,8 @@ performance.MultiWayClassificationResult <- function(x, splitList=NULL, classMet
   
 }
 
+#' @keywords internal
+#' @noRd
 combinedAUC <- function(Pred, Obs) {
   mean(sapply(1:ncol(Pred), function(i) {
     lev <- levels(Obs)[i]
@@ -123,6 +136,9 @@ combinedAUC <- function(Pred, Obs) {
   }))
 }
 
+
+#' @keywords internal
+#' @noRd
 combinedACC <- function(Pred, Obs) {
   levs <- levels(as.factor(Obs))
   maxind <- apply(Pred, 1, which.max)
@@ -131,21 +147,42 @@ combinedACC <- function(Pred, Obs) {
   
 }
 
-.multiwayPerf <- function(observed, predicted, probs, classMetrics=FALSE) {
+
+#' @keywords internal
+binary_perf <- function(observed, predicted, probs) {
   obs <- as.character(observed)
-  
   ncorrect <- sum(obs == predicted)
   ntotal <- length(obs)
-  maxClass <- max(table(obs))
+  #maxClass <- max(table(obs))
   
-  out <- binom.test(ncorrect,
-                    ntotal,
-                    p = maxClass/ntotal,
-                    alternative = "greater")
+  #out <- binom.test(ncorrect,
+  #                  ntotal,
+  #                  p = maxClass/ntotal,
+  #                  alternative = "greater")
+  
+  
+  #c(ZAccuracy=-qnorm(out$p.value), Accuracy=ncorrect/ntotal, AUC=Metrics::auc(observed == levels(observed)[2], probs[,2])-.5)
+  c(Accuracy=ncorrect/ntotal, AUC=Metrics::auc(observed == levels(observed)[2], probs[,2])-.5)
+  
+}
+
+#' @keywords internal
+multiclass_perf <- function(observed, predicted, probs, class_metrics=FALSE) {
+  
+  obs <- as.character(observed)
+  
+  #ncorrect <- sum(obs == predicted)
+  ntotal <- length(obs)
+  #maxClass <- max(table(obs))
+  
+  #out <- binom.test(ncorrect,
+  #                  ntotal,
+  #                  p = maxClass/ntotal,
+  #                  alternative = "greater")
   
  
   aucres <- sapply(1:ncol(probs), function(i) {
-    lev <- levels(observed)[i]
+    lev <- try(levels(observed)[i])
     pos <- obs == lev
     pclass <- probs[,i]
     pother <- rowMeans(probs[,-i, drop=FALSE])
@@ -155,10 +192,12 @@ combinedACC <- function(Pred, Obs) {
   names(aucres) <- paste0("AUC_", colnames(probs))
   
   
-  if (classMetrics) {
-    c(ZAccuracy=-qnorm(out$p.value), Accuracy=sum(obs == as.character(predicted))/length(obs), AUC=mean(aucres), aucres)
+  if (class_metrics) {
+    #c(ZAccuracy=-qnorm(out$p.value), Accuracy=sum(obs == as.character(predicted))/length(obs), AUC=mean(aucres), aucres)
+    c(Accuracy=sum(obs == as.character(predicted))/length(obs), AUC=mean(aucres), aucres)
   } else {
-    c(ZAccuracy=-qnorm(out$p.value), Accuracy=sum(obs == as.character(predicted))/length(obs), AUC=mean(aucres))
+    #c(ZAccuracy=-qnorm(out$p.value), Accuracy=sum(obs == as.character(predicted))/length(obs), AUC=mean(aucres))
+    c(Accuracy=sum(obs == as.character(predicted))/length(obs), AUC=mean(aucres))
   }
 }
   

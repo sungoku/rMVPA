@@ -8,8 +8,9 @@ performance(x, ...)
 }
 \arguments{
 \item{x}{the result to evaluate performance of}
+
+\item{...}{extra args}
 }
 \description{
-Compute performance metrics from a classiifcation result
+Compute appropriate performance metrics such as accuracy/AUC/RMSE from a classification/regression result
 }
-

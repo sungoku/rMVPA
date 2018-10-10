@@ -3,16 +3,17 @@ Type: Package
 Title: Multivoxel Pattern Analysis in R
 Version: 0.1.1
 Date: 2016-03-04
-Author: Bradley R. Buchsbaum
+Authors@R: person("Bradley", "R.", "Buchsbaum", role = c("aut", "cre"), email = "brad.buchsbaum@gmail.com")
 Maintainer: Bradley R. Buchsbaum <brad.buchsbaum@gmail.com>
 Description: An R package to facilitate multivoxel pattern analysis of
     neuroimaging data in R.
 License: GPL (>= 2)
 Imports:
+    assertthat,
+    dplyr,
+    tibble,
     caret,
     neuroim,
-    randomForest,
-    iterators,
     itertools,
     parallel,
     foreach,
@@ -20,37 +21,52 @@ Imports:
     doParallel,
     MASS,
     futile.logger,
-    glmnet,
-    io,
     stringr,
     Matrix,
-    optparse,
     Metrics,
     memoise,
-    e1071,
-    R6,
-    sp
+    purrr,
+    furrr,
+    ModelMetrics,
+    matrixStats,
+    modelr,
+    Rfit,
+    rflann,
+    neurosurf
 Collate:
     'allgeneric.R'
     'classifiers.R'
-    'cluster.R'
-    'mvpa_model.R'
     'common.R'
+    'crossval.R'
     'dataset.R'
     'design.R'
-    'ensemble.R'
-    'featureSelection.R'
-    'folds.R'
-    'model_spec.R'
-    'models.R'
-    'mvpa_analysis.R'
+    'feature_selection.R'
     'mvpa_iterate.R'
-    'optim.R'
+    'mvpa_model.R'
+    'model_fit.R'
+    'mvpa_result.R'
     'performance.R'
     'rMVPA.R'
+    'regional.R'
     'resample.R'
-    'similarity.R'
+    'rsa_model.R'
+    'searchlight.R'
     'utils.R'
-RoxygenNote: 5.0.1
+RoxygenNote: 6.0.1.9000
 Suggests:
-    testthat
+    testthat,
+    covr,
+    knitr,
+    rmarkdown,
+    roxygen2,
+    glmnet,
+    io,
+    e1071,
+    randomForest,
+    iterators,
+    optparse
+Remotes:
+    bbuchsbaum/neuroim,
+    bbuchsbaum/neurosurf,
+    YeeJeremy/rflann
+VignetteBuilder: knitr

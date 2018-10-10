@@ -1,10 +1,6 @@
 
 
-
-
-#' @export
-get_samples.mvpa_dataset <- function(obj, voxlist) {
-
+.get_samples <- function(obj, voxlist) {
   ret <- lapply(voxlist, function(vox) {
     sam <- data_sample(obj, vox)
   })
@@ -13,7 +9,16 @@ get_samples.mvpa_dataset <- function(obj, voxlist) {
   df <- tibble::data_frame(sample = ret)
   df[[".id"]] <- modelr:::id(n)
   df
-  
+}
+
+#' @export
+get_samples.mvpa_dataset <- function(obj, vox_list) {
+  .get_samples(obj, vox_list)
+}
+
+#' @export
+get_samples.mvpa_surface_dataset <- function(obj, vox_list) {
+  .get_samples(obj, vox_list)
 }
 
 
@@ -29,6 +34,7 @@ data_sample.mvpa_dataset <- function(obj, vox) {
 }
 
 
+
 #' @export
 print.data_sample <- function(x, ...) {
   if (is.matrix(x$vox)) {
@@ -38,20 +44,21 @@ print.data_sample <- function(x, ...) {
   }
 }
 
-#' @export
+#' @keywords internal
+#' @noRd
 as_roi.data_sample <- function(x, ...) {
- 
-  train_roi <- series_roi(x$data$train_data, x$vox)
+  
+  train_roi <- try(series_roi(x$data$train_data, x$vox))
   
   test_roi <- if (has_test_set(x$data)) {
     series_roi(x$data$test_data, x$vox)
   }
   
-  cds <- if (is.vector(x$vox)) {
-    cds <- indexToGrid(space(x$data$mask), x$vox)
-  } else {
-    x$vox
-  }
+  #cds <- if (is.vector(x$vox)) {
+  #  cds <- indexToGrid(space(x$data$mask), x$vox)
+  #} else {
+  #  x$vox
+  #}
 
   if (is.null(test_roi)) {
     list(train_roi=train_roi,
@@ -64,7 +71,8 @@ as_roi.data_sample <- function(x, ...) {
   
 }
 
-#' @export
+#' @keywords internal
+#' @noRd
 as.data.frame.data_sample <- function(x, ...) {
   train_mat <- series(x$data$train_data, x$vox)
   

@@ -1,0 +1,32 @@
+# R for travis: see documentation at https://docs.travis-ci.com/user/languages/r
+
+language: R
+sudo: false
+cache: packages
+
+r_github_packages: bbuchsbaum/neuroim
+
+
+warnings_are_errors: true
+
+Imports: rflann
+Remotes: YeeJeremy/rflann
+
+
+Imports: rflann, 
+  neuroim
+  
+Remotes: YeeJeremy/rflann,
+  bbuchsbaum/neuroim
+  
+
+r_packages:
+  - covr
+
+after_success:
+  - Rscript -e 'library(covr); codecov(type="all")'
+
+
+env:
+  global:
+  - _R_CHECK_FORCE_SUGGESTS_=FALSE

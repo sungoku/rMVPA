@@ -21,16 +21,17 @@ colHuber <- function(x,k=1.5, tol=1e-04) {
 
 
 
-#' @export
+#' @noRd
 MVPAModels <- new.env()
 
 
-#' @export
+
 #' @import MASS
+#' @noRd
 corsimFit <- function(x, y, method, robust) {
   estimator <- if (robust) {
     function(vec)  {
-      h <- try(huber(vec))
+      h <- try(MASS::huber(vec))
       if (inherits(h, "try-error")) {
         median(vec)
       } else {
@@ -41,8 +42,8 @@ corsimFit <- function(x, y, method, robust) {
     "mean"
   }
   
-  if (is.character(estimator)) {
-    list(conditionMeans=groupMeans(x, 1, y), levs=levels(y), method=method, robust=robust)
+  if (identical("mean", estimator)) {
+    list(conditionMeans=group_means(x, 1, y), levs=levels(y), method=method, robust=robust)
   } else {
     list(conditionMeans = splitReduce(as.matrix(x), y, estimator), levs=levels(y), method=method, robust=robust)
   }
@@ -60,7 +61,8 @@ prob_corsimFit <- function(modelFit, newData) {
   scores <- cor(t(newData), t(modelFit$conditionMeans), method=modelFit$method)
   
   mc <- scores[cbind(1:nrow(scores), max.col(scores, ties.method = "first"))]
-  probs <- exp(scores - mc)
+  #probs <- exp(scores - mc)
+  probs <- exp(sweep(scores, 1, mc, "-"))
   probs <- zapsmall(probs/rowSums(probs))
   colnames(probs) <- modelFit$levs
   probs
@@ -167,21 +169,6 @@ MVPAModels$gpca_lda <- list(type = "Classification",
                             })
 
 
-MVPAModels$liblinear <- list(type = "Classification", 
-                             library = "LiblineaR", 
-                             loop = NULL, 
-                             parameters=data.frame(parameters=c("type", "cost"), class=c("numeric", "numeric"), labels=c("model type", "cost of constraints violation")),
-                             grid=function(x, y, len = NULL) {
-                               data.frame(type=0, cost=heuristicC(x))
-                             },
-                             fit=function(x, y, wts, param, lev, last, weights, classProbs, ...) LiblineaR::LiblineaR(x,y,param$type, param$cost),
-                             predict=function(modelFit, newdata, preProc = NULL, submodels = NULL) {
-                               predict(modelFit, as.matrix(newdata))$predictions
-                             },
-                             prob=function(modelFit, newdata, preProc = NULL, submodels = NULL) {
-                               predict(modelFit, as.matrix(newdata), prob=TRUE)$probabilities
-                             })
-
 
 MVPAModels$nearestMean <- list(type = "Classification", 
                                library = "klaR", 
@@ -204,13 +191,16 @@ MVPAModels$corclass <- list(type = "Classification",
                           label="corclass",
                           loop = NULL, 
                           parameters=data.frame(parameters=c("method", "robust"), class=c("character", "logical"), label=c("correlation type: pearson, spearman, or kendall", "mean or huber")),
-                          grid=function(x, y, len = NULL) if (len == 1) { data.frame(method="pearson", robust=FALSE) } else { expand.grid(method=c("pearson", "spearman", "kendall"), robust=c(TRUE, FALSE)) },
+                          grid=function(x, y, len = NULL) if (is.null(len) || len == 1) { data.frame(method="pearson", robust=FALSE) } else { expand.grid(method=c("pearson", "spearman", "kendall"), 
+                                                                                                                                          robust=c(TRUE, FALSE)) },
                           fit=function(x, y, wts, param, lev, last, weights, classProbs, ...) corsimFit(x,y, as.character(param$method), param$robust),
+                          
                           predict=function(modelFit, newdata, preProc = NULL, submodels = NULL) predict_corsimFit(modelFit, as.matrix(newdata)),
                           prob=function(modelFit, newdata, preProc = NULL, submodels = NULL) {
                             prob_corsimFit(modelFit, as.matrix(newdata))
                           })
 
+MVPAModels$corsim <- MVPAModels$corclass
 
 MVPAModels$sda_notune <- list(type = "Classification", 
                               library = "sda", 
@@ -221,8 +211,12 @@ MVPAModels$sda_notune <- list(type = "Classification",
                               fit=function(x, y, wts, param, lev, last, weights, classProbs, ...) {                       
                                 sda::sda(Xtrain=as.matrix(x), L=y, verbose=FALSE, ...)
                               },
-                              predict=function(modelFit, newdata, preProc = NULL, submodels = NULL) predict(modelFit, as.matrix(newdata), verbose=FALSE)$class,
+                              predict=function(modelFit, newdata, preProc = NULL, submodels = NULL) {
+                                
+                                predict(modelFit, as.matrix(newdata), verbose=FALSE)$class
+                              },
                               prob=function(modelFit, newdata, preProc = NULL, submodels = NULL) {
+            
                                 predict(modelFit, as.matrix(newdata),verbose=FALSE)$posterior
                               })
 
@@ -235,7 +229,8 @@ MVPAModels$sda_boot <- list(type = "Classification",
                                                     class=c("numeric", "numeric"), 
                                                     label=c("number of bootstap resamples", "fraction of features to select")),
                               grid=function(x, y, len = NULL) data.frame(reps=10, frac=1),
-                              fit=function(x, y, wts, param, lev, last, weights, classProbs, ...) {    
+                              fit=function(x, y, wts, param, lev, last, weights, classProbs, ...) {   
+                                
                                 x <- as.matrix(x)
                                 mfits <- list()
                                 count <- 1
@@ -248,13 +243,13 @@ MVPAModels$sda_boot <- list(type = "Classification",
                                   sdsam <- apply(smat, 2, function(sam) sd(table(y[sam])))
                                   row.idx <- smat[, which.min(sdsam)]
                                   
-                                  ret <- if (param$frac < 1) {
+                                  ret <- if (param$frac > 0 && param$frac < 1) {
                                     nkeep <- max(param$frac * ncol(x),1)
-                                    #print(nkeep)
+                              
                                     rank <- memo_rank(x, L=y, fdr=FALSE)
                                     ind <- rank[,"idx"][1:nkeep]
                                   
-                                    fit <- sda::sda(Xtrain=x[row.idx,ind,drop=FALSE], L=y, lambda=param$lambda, verbose=FALSE)
+                                    fit <- sda::sda(Xtrain=x[row.idx,ind,drop=FALSE], L=y, verbose=FALSE,...)
                                     attr(fit, "keep.ind") <- ind
                                     fit
                                   } else {
@@ -282,22 +277,24 @@ MVPAModels$sda_boot <- list(type = "Classification",
                                 
                               },
                               predict=function(modelFit, newdata, preProc = NULL, submodels = NULL) {
-                                message("inside sda_boot predict")
+                      
                                 preds <- lapply(modelFit$fits, function(fit) {
-                                  print(class(fit))
-                                  predict(fit, as.matrix(newdata), verbose=FALSE)$posterior
+                                  ind <- attr(fit, "keep.ind")
+                                  predict(fit, as.matrix(newdata)[,ind], verbose=FALSE)$posterior
                                 })
                                 
                                 prob <- preds[!sapply(preds, function(x) is.null(x))]
                                 pfinal <- Reduce("+", prob)/length(prob)
                                 
                                 colnames(pfinal)[apply(pfinal, 1, which.max)]
+                            
                               },
                                 
                                 
                               prob=function(modelFit, newdata, preProc = NULL, submodels = NULL) {
                                 preds <- lapply(modelFit$fits, function(fit) {
-                                  predict(fit, as.matrix(newdata), verbose=FALSE)$posterior
+                                  ind <- attr(fit, "keep.ind")
+                                  predict(fit, as.matrix(newdata)[,ind], verbose=FALSE)$posterior
                                 })
                                 
                                 prob <- preds[!sapply(preds, function(x) is.null(x))]
@@ -305,9 +302,10 @@ MVPAModels$sda_boot <- list(type = "Classification",
                                 
                               })
 
-#' @export
-#' @import memoise
+
+#' @importFrom memoise memoise
 #' @import sda
+#' @noRd
 memo_rank <- memoise(function(X, L,fdr) {
   sda::sda.ranking(X,L,fdr=fdr,verbose=FALSE)
 })
@@ -376,10 +374,10 @@ MVPAModels$sparse_sda <- list(type = "Classification",
                                parameters=data.frame(parameters=c("frac", "lambda"), class=c("numeric", "numeric"), label=c("fraction of features to keep (frac > 0 a frac <= 1)", "lambda")),
                                grid=function(x, y, len = NULL) expand.grid(frac=seq(.1,1,length.out=len), lambda=seq(.01,.99,length.out=len)),
                                fit=function(x, y, wts, param, lev, last, weights, classProbs, ...) {
-                                 
+                                 print(param)
                                  x <- as.matrix(x)                          
                                  nkeep <- max(param$frac * ncol(x),1)
-                                 print(nkeep)
+                                 
                                  rank <- memo_rank(x, L=y, fdr=FALSE)
                                  ind <- rank[,"idx"][1:nkeep]
                                  
